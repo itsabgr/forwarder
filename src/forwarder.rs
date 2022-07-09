@@ -1,21 +1,16 @@
 extern crate core;
 
 use std::io;
-use std::net::{IpAddr, UdpSocket};
 use std::net::SocketAddr;
-
-use rand;
+use std::net::{IpAddr, UdpSocket};
 
 pub struct Server {
     key: [u8; 32],
 }
 
-
 impl Server {
     pub fn new(key: [u8; 32]) -> Server {
-        Server {
-            key,
-        }
+        Server { key }
     }
 
     pub fn serve(&self, socket: UdpSocket) -> io::Error {
@@ -29,12 +24,14 @@ impl Server {
                             match input.addr {
                                 Some(target) => {
                                     let output = Packet::new(Some(from), input.data);
-                                    let _ = socket.send_to(output.encode(&self.key).as_slice(), target);
+                                    let _ =
+                                        socket.send_to(output.encode(&self.key).as_slice(), target);
                                 }
                                 None => {
                                     let crypto_addr = from.encrypt(&self.key);
                                     let output = Packet::new(None, crypto_addr.as_slice());
-                                    let _ = socket.send_to(output.encode(&self.key).as_slice(), from);
+                                    let _ =
+                                        socket.send_to(output.encode(&self.key).as_slice(), from);
                                 }
                             };
                         }
@@ -92,7 +89,7 @@ impl Packet<'_> {
     pub fn encode(&self, key: &[u8; 32]) -> Vec<u8> {
         let addr: Vec<u8> = match self.addr {
             None => vec![],
-            Some(addr) => addr.encrypt(key)
+            Some(addr) => addr.encrypt(key),
         };
         let mut v = Vec::with_capacity(1 + addr.len() + self.data.len());
         v.push(addr.len() as u8);
@@ -121,7 +118,7 @@ impl Packet<'_> {
             Some(addr) => Some(Packet {
                 addr: Some(addr),
                 data: &b[addr_end..],
-            })
+            }),
         }
     }
 }
@@ -133,48 +130,50 @@ impl ISocketAddr for SocketAddr {
     fn decrypt(b: &[u8], key: &[u8; 32]) -> Option<SocketAddr> {
         match crypto::decrypt(b, key) {
             Err(_) => None,
-            Ok(plain) => SocketAddr::decode(plain.as_slice())
+            Ok(plain) => SocketAddr::decode(plain.as_slice()),
         }
     }
     fn encode(&self) -> Vec<u8> {
         match self {
-            SocketAddr::V4(ip) =>
-                [self.port().to_be_bytes().as_ref(), ip.ip().octets().as_ref()].concat()
-            ,
-            SocketAddr::V6(ip) =>
-                [self.port().to_be_bytes().as_ref(), ip.ip().octets().as_ref()].concat()
-            ,
+            SocketAddr::V4(ip) => [
+                self.port().to_be_bytes().as_ref(),
+                ip.ip().octets().as_ref(),
+            ]
+            .concat(),
+            SocketAddr::V6(ip) => [
+                self.port().to_be_bytes().as_ref(),
+                ip.ip().octets().as_ref(),
+            ]
+            .concat(),
         }
     }
     fn decode(b: &[u8]) -> Option<SocketAddr> {
         match b.len() {
             6 => {
                 let saddr = SocketAddr::new(
-                    IpAddr::from([
-                        b[2], b[3], b[4], b[5],
-                    ]),
-                    u16::from_be_bytes([b[0], b[1]]));
+                    IpAddr::from([b[2], b[3], b[4], b[5]]),
+                    u16::from_be_bytes([b[0], b[1]]),
+                );
                 return Some(saddr);
             }
             18 => {
                 let saddr = SocketAddr::new(
                     IpAddr::from([
-                        b[2], b[3], b[4], b[5],
-                        b[6], b[7], b[8], b[9],
-                        b[10], b[11], b[12], b[13],
+                        b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13],
                         b[14], b[15], b[16], b[17],
                     ]),
-                    u16::from_be_bytes([b[0], b[1]]));
+                    u16::from_be_bytes([b[0], b[1]]),
+                );
                 return Some(saddr);
             }
-            _ => None
+            _ => None,
         }
     }
 }
 
 mod crypto {
-    use chacha20poly1305::{ChaCha20Poly1305, Nonce};
     use chacha20poly1305::aead::{Aead, NewAead};
+    use chacha20poly1305::{ChaCha20Poly1305, Nonce};
 
     pub fn encrypt(addr: Vec<u8>, key: &[u8; 32]) -> Vec<u8> {
         let cipher = ChaCha20Poly1305::new_from_slice(key).expect("failed");
@@ -191,4 +190,3 @@ mod crypto {
         }
     }
 }
-
