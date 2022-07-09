@@ -1,9 +1,10 @@
 extern crate core;
 
-use std::{net, panic, thread};
+use std::net;
 use std::net::SocketAddr;
 
 use clap::Parser;
+use rand::random;
 
 use crate::forwarder::Server;
 
@@ -16,9 +17,6 @@ struct Args {
     ///listening addr
     #[clap(long, value_parser)]
     addr: SocketAddr,
-    ///default route
-    #[clap(long, value_parser)]
-    def: SocketAddr,
 
 }
 
@@ -26,7 +24,7 @@ fn main() {
     let args = Args::parse();
     let socket = net::UdpSocket::bind(args.addr).expect("failed to listen");
     println!("addr {}", socket.local_addr().expect("failed to take local_addr"));
-    let server = Server::new(args.def);
+    let server = Server::new(random());
     let err = server.serve(socket);
     eprintln!("{}", err);
 }

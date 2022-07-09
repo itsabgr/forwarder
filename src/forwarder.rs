@@ -1,35 +1,24 @@
 extern crate core;
 
-use std::{io, net};
-use std::borrow::Borrow;
-use std::net::{IpAddr, SocketAddrV4, UdpSocket};
-use std::net::Ipv4Addr;
-use std::net::Ipv6Addr;
+use std::io;
+use std::net::{IpAddr, UdpSocket};
 use std::net::SocketAddr;
-use std::slice::SliceIndex;
 
-use chacha20poly1305::{aead, ChaCha20Poly1305, Nonce};
-use chacha20poly1305::aead::{Aead, NewAead};
 use rand;
-use rand::distributions::Open01;
-use sha2::Digest;
 
 pub struct Server {
     key: [u8; 32],
-    def_addr: SocketAddr,
 }
 
 
 impl Server {
-    pub fn new(def_addr: SocketAddr) -> Server {
+    pub fn new(key: [u8; 32]) -> Server {
         Server {
-            key: rand::random(),
-            def_addr,
+            key,
         }
     }
 
     pub fn serve(&self, socket: UdpSocket) -> io::Error {
-        let local_addr = socket.local_addr().expect("failed to get local_addr");
         let mut b = [0 as u8; 512];
         loop {
             match socket.recv_from(&mut b) {
@@ -37,14 +26,17 @@ impl Server {
                 Ok((n, from)) => {
                     match Packet::decode(&b[..n], &self.key) {
                         Some(input) => {
-                            let target = match input.addr {
-                                Some(addr) => addr,
-                                None => self.def_addr,
+                            match input.addr {
+                                Some(target) => {
+                                    let output = Packet::new(Some(from), input.data);
+                                    let _ = socket.send_to(output.encode(&self.key).as_slice(), target);
+                                }
+                                None => {
+                                    let crypto_addr = from.encrypt(&self.key);
+                                    let output = Packet::new(None, crypto_addr.as_slice());
+                                    let _ = socket.send_to(output.encode(&self.key).as_slice(), from);
+                                }
                             };
-                            if target != local_addr {
-                                let output = Packet::new(Some(from), input.data);
-                                let _ = socket.send_to(output.encode(&self.key).as_slice(), target);
-                            }
                         }
                         _ => {}
                     };
@@ -81,8 +73,8 @@ fn test_no_addr() {
 trait ISocketAddr {
     fn encrypt(&self, key: &[u8; 32]) -> Vec<u8>;
     fn decrypt(b: &[u8], key: &[u8; 32]) -> Option<SocketAddr>;
-    fn _encode(&self) -> Vec<u8>;
-    fn _decode(b: &[u8]) -> Option<SocketAddr>;
+    fn encode(&self) -> Vec<u8>;
+    fn decode(b: &[u8]) -> Option<SocketAddr>;
 }
 
 pub struct Packet<'a> {
@@ -136,15 +128,15 @@ impl Packet<'_> {
 
 impl ISocketAddr for SocketAddr {
     fn encrypt(&self, key: &[u8; 32]) -> Vec<u8> {
-        encrypt(self._encode(), key)
+        crypto::encrypt(self.encode(), key)
     }
     fn decrypt(b: &[u8], key: &[u8; 32]) -> Option<SocketAddr> {
-        match decrypt(b, key) {
+        match crypto::decrypt(b, key) {
             Err(_) => None,
-            Ok(plain) => SocketAddr::_decode(plain.as_slice())
+            Ok(plain) => SocketAddr::decode(plain.as_slice())
         }
     }
-    fn _encode(&self) -> Vec<u8> {
+    fn encode(&self) -> Vec<u8> {
         match self {
             SocketAddr::V4(ip) =>
                 [self.port().to_be_bytes().as_ref(), ip.ip().octets().as_ref()].concat()
@@ -154,7 +146,7 @@ impl ISocketAddr for SocketAddr {
             ,
         }
     }
-    fn _decode(b: &[u8]) -> Option<SocketAddr> {
+    fn decode(b: &[u8]) -> Option<SocketAddr> {
         match b.len() {
             6 => {
                 let saddr = SocketAddr::new(
@@ -180,18 +172,23 @@ impl ISocketAddr for SocketAddr {
     }
 }
 
+mod crypto {
+    use chacha20poly1305::{ChaCha20Poly1305, Nonce};
+    use chacha20poly1305::aead::{Aead, NewAead};
 
-fn encrypt(addr: Vec<u8>, key: &[u8; 32]) -> Vec<u8> {
-    let cipher = ChaCha20Poly1305::new_from_slice(key).expect("failed");
-    let nonce = Nonce::from_slice(&[0; 12]);
-    cipher.encrypt(nonce, addr.as_ref()).expect("failed")
-}
+    pub fn encrypt(addr: Vec<u8>, key: &[u8; 32]) -> Vec<u8> {
+        let cipher = ChaCha20Poly1305::new_from_slice(key).expect("failed");
+        let nonce = Nonce::from_slice(&[0; 12]);
+        cipher.encrypt(nonce, addr.as_ref()).expect("failed")
+    }
 
-fn decrypt(encrypted: &[u8], key: &[u8; 32]) -> Result<Vec<u8>, ()> {
-    let cipher = ChaCha20Poly1305::new_from_slice(key).expect("failed");
-    let nonce = Nonce::from_slice(&[0; 12]);
-    match cipher.decrypt(nonce, encrypted.as_ref()) {
-        Err(_) => Err(()),
-        Ok(addr) => Ok(addr),
+    pub fn decrypt(encrypted: &[u8], key: &[u8; 32]) -> Result<Vec<u8>, ()> {
+        let cipher = ChaCha20Poly1305::new_from_slice(key).expect("failed");
+        let nonce = Nonce::from_slice(&[0; 12]);
+        match cipher.decrypt(nonce, encrypted.as_ref()) {
+            Err(_) => Err(()),
+            Ok(addr) => Ok(addr),
+        }
     }
 }
+
