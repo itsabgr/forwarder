@@ -1,6 +1,6 @@
 [package]
 name = "forwarder"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "fast packet forwarder"
 license = "MIT"
@@ -13,3 +13,5 @@ sha2 = "0.10.2"
 clap = { version = "3.0", features = ["derive"] }
 rmp = "0.8.11"
 nacl = "0.5.3"
+num_cpus = "1.13.1"
+core_affinity = "0.5.10"

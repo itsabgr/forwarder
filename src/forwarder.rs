@@ -13,7 +13,7 @@ impl Server {
         Server { key }
     }
 
-    pub fn serve(&self, socket: UdpSocket) -> io::Error {
+    pub fn serve(&self, socket: &UdpSocket) -> io::Error {
         let mut b = [0 as u8; 512];
         loop {
             match socket.recv_from(&mut b) {
