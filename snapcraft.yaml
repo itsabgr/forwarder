@@ -1,5 +1,5 @@
 name: forwarder
-version: '1.0'
+version: '1.1'
 summary: forwarder server
 description: forwarder server
 confinement: strict
@@ -8,13 +8,12 @@ base: core20
 parts:
   forwarder:
     plugin: rust
-    source: https://github.com/itsabgr/forwarder
-    source-type: git
+    source: .
 
 apps:
   forwarderd:
     daemon: simple
-    command: bin/forwarder --addr 0.0.0.0:4142
+    command: bin/forwarder --addr 0.0.0.0:4141 --zero 127.0.0.1:4142
     stop-timeout: 1s
     stop-mode: sigterm
     install-mode: enable

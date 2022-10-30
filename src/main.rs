@@ -1,8 +1,8 @@
 extern crate core;
 
-use std::{net, thread};
 use std::net::SocketAddr;
 use std::process::exit;
+use std::{net, thread};
 
 use clap::Parser;
 use rand::random;
@@ -13,8 +13,13 @@ mod forwarder;
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
-#[clap(version = "1.0", about = None)]
+#[clap(version = "1.1", about = None)]
 struct Args {
+
+    ///zero addr
+    #[clap(long, value_parser)]
+    zero: SocketAddr,
+
     ///listening addr
     #[clap(long, value_parser)]
     addr: SocketAddr,
@@ -27,6 +32,7 @@ struct Args {
 fn main() {
     let args = Args::parse();
     let key: [u8; 32] = random();
+    let zero = args.zero;
     assert_ne!(key, [0; 32]);
     let number_of_workers: u8 = match args.n {
         0 => num_cpus::get() as u8,
@@ -39,26 +45,31 @@ fn main() {
         "addr: {}",
         socket.local_addr().expect("failed to take local_addr")
     );
+    println!("zero: {}", zero);
     println!("workers: {}", number_of_workers);
     for i in 0..number_of_workers - 1 {
         let socket_clone = socket.try_clone().expect("failed to clone socket");
         thread::spawn(move || {
             match core_affinity::get_core_ids() {
-                Some(cores) => core_affinity::set_for_current(cores[(i % (cores.len() as u8)) as usize]),
+                Some(cores) => {
+                    core_affinity::set_for_current(cores[(i % (cores.len() as u8)) as usize])
+                }
                 _ => {}
             }
-            let server = Server::new(key);
+            let server = Server::new(key, zero);
             let err = server.serve(&socket_clone);
             eprintln!("{}", err);
             exit(1);
         });
-    };
+    }
     match core_affinity::get_core_ids() {
-        Some(cores) => core_affinity::set_for_current(cores[(number_of_workers % (cores.len() as u8)) as usize]),
+        Some(cores) => core_affinity::set_for_current(
+            cores[(number_of_workers % (cores.len() as u8)) as usize],
+        ),
         _ => {}
     }
     let socket_ptr = &socket;
-    let server = Server::new(key);
+    let server = Server::new(key, zero);
     let err = server.serve(socket_ptr);
     eprintln!("{}", err);
     drop(socket);

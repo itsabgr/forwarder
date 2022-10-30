@@ -5,12 +5,19 @@ use std::net::SocketAddr;
 use std::net::{IpAddr, UdpSocket};
 
 pub struct Server {
+    zero: SocketAddr,
     key: [u8; 32],
 }
-
+fn is_valid_sockaddr(addr: SocketAddr) -> bool {
+    if addr.port() == 0 {
+        return false;
+    }
+    //TODO addr.ip().is_global()
+    true
+}
 impl Server {
-    pub fn new(key: [u8; 32]) -> Server {
-        Server { key }
+    pub fn new(key: [u8; 32], zero: SocketAddr) -> Server {
+        Server { key, zero }
     }
 
     pub fn serve(&self, socket: &UdpSocket) -> io::Error {
@@ -18,22 +25,30 @@ impl Server {
         loop {
             match socket.recv_from(&mut b) {
                 Err(e) => return e,
-                Ok((n, from)) => {
+                Ok((n, mut from)) => {
                     match Packet::decode(&b[..n], &self.key) {
                         Some(input) => {
-                            match input.addr {
+                            let target = match input.addr {
                                 Some(target) => {
-                                    let output = Packet::new(Some(from), input.data);
-                                    let _ =
-                                        socket.send_to(output.encode(&self.key).as_slice(), target);
+                                    if !is_valid_sockaddr(target) {
+                                        continue;
+                                    }
+                                    target
                                 }
                                 None => {
-                                    let crypto_addr = from.encrypt(&self.key);
-                                    let output = Packet::new(None, crypto_addr.as_slice());
-                                    let _ =
-                                        socket.send_to(output.encode(&self.key).as_slice(), from);
+                                    // uncomment to disable pings for zero addr
+                                    //
+                                    // if from == self.zero {
+                                    //     continue;
+                                    // }
+                                    self.zero
                                 }
                             };
+                            if from == self.zero {
+                                from = self.zero
+                            }
+                            let output = Packet::new(Some(from), input.data);
+                            let _ = socket.send_to(output.encode(&self.key).as_slice(), target);
                         }
                         _ => {}
                     };
@@ -172,8 +187,8 @@ impl ISocketAddr for SocketAddr {
 }
 
 mod crypto {
-    use chacha20poly1305::aead::{Aead, NewAead};
-    use chacha20poly1305::{ChaCha20Poly1305, Nonce};
+    use chacha20poly1305::aead::{Aead};
+    use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce};
 
     pub fn encrypt(addr: Vec<u8>, key: &[u8; 32]) -> Vec<u8> {
         let cipher = ChaCha20Poly1305::new_from_slice(key).expect("failed");
